@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teleop</title>
+</head>
+
+<body>
+    <main id="message"></main>
+
+    <button id="button">Start</button>
+
+    <script>
+        const setMessage = (message) => {
+            console.log(message);
+
+            document.querySelector('#message').textContent = message;
+
+            fetch('/log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: message
+                })
+            }).then((response) => {
+                return response.json();
+            }).then((data) => {
+                console.log(data);
+            }).catch((err) => {
+                console.error('Failed to send message to server:', err);
+            });
+        }
+
+        setMessage('Click the button to start WebXR');
+        document.querySelector('#button').addEventListener('click', () => {
+            if (navigator.xr) {
+                navigator.xr.requestSession('immersive-vr').then((session) => {
+                    const glCanvas = document.createElement('canvas');
+                    const gl = glCanvas.getContext('webgl', { xrCompatible: true });
+                    session.updateRenderState({
+                        baseLayer: new XRWebGLLayer(session, gl)
+                    });
+
+                    session.requestReferenceSpace('local').then((referenceSpace) => {
+                        function onXRFrame(time, frame) {
+                            let pose = frame.getViewerPose(referenceSpace);
+
+                            if (pose) {
+                                let position = pose.transform.position;
+                                let orientation = pose.transform.orientation;
+
+                                setMessage(`Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}`);
+                                // setMessage(`Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}`);
+                            } else {
+                                setMessage('No viewer pose');
+                            }
+                            session.requestAnimationFrame(onXRFrame);
+                        }
+                        session.requestAnimationFrame(onXRFrame);
+                    });
+                }).catch((err) => {
+                    setMessage('Failed to start WebXR session' + err);
+                });
+            } else {
+                setMessage('WebXR is not supported on this device');
+            }
+        });
+    </script>
+</body>
+
+</html>
