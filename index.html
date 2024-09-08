@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teleop</title>
+
+    <script src='https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.js'></script>
 </head>
 
 <body>
@@ -13,6 +15,8 @@
     <button id="button">Start</button>
 
     <script>
+        var polyfill = new WebXRPolyfill();
+
         const setMessage = (message) => {
             console.log(message);
 
@@ -38,32 +42,41 @@
         setMessage('Click the button to start WebXR');
         document.querySelector('#button').addEventListener('click', () => {
             if (navigator.xr) {
-                navigator.xr.requestSession('immersive-vr').then((session) => {
+                navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['unbounded', 'local-floor']}).then((session) => {  // Changed to immersive-ar
                     const glCanvas = document.createElement('canvas');
                     const gl = glCanvas.getContext('webgl', { xrCompatible: true });
                     session.updateRenderState({
                         baseLayer: new XRWebGLLayer(session, gl)
                     });
 
-                    session.requestReferenceSpace('local').then((referenceSpace) => {
+                    session.requestReferenceSpace('local-floor').then((referenceSpace) => {
+                        let xrReferenceSpace = referenceSpace;
+
                         function onXRFrame(time, frame) {
-                            let pose = frame.getViewerPose(referenceSpace);
+                            let pose = frame.getViewerPose(xrReferenceSpace);
+                            pose = pose ? pose.views[0] : null;
 
                             if (pose) {
                                 let position = pose.transform.position;
                                 let orientation = pose.transform.orientation;
 
+                                if (pose.emulatedPosition) {
+                                    setMessage('Viewer pose is emulated');
+                                }
+
                                 setMessage(`Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}`);
                                 // setMessage(`Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}`);
                             } else {
-                                setMessage('No viewer pose');
+                                setMessage('No viewer pose available');
                             }
                             session.requestAnimationFrame(onXRFrame);
                         }
                         session.requestAnimationFrame(onXRFrame);
+                    }).catch((err) => {
+                        setMessage('Failed to request reference space: ' + err);
                     });
                 }).catch((err) => {
-                    setMessage('Failed to start WebXR session' + err);
+                    setMessage('Failed to start WebXR session: ' + err);
                 });
             } else {
                 setMessage('WebXR is not supported on this device');
