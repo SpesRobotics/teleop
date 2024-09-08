@@ -40,6 +40,7 @@
         }
 
         setMessage('Click the button to start WebXR');
+        let lastSendTime = performance.now();
         document.querySelector('#button').addEventListener('click', () => {
             if (navigator.xr) {
                 navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['unbounded', 'local-floor']}).then((session) => {  // Changed to immersive-ar
@@ -60,12 +61,14 @@
                                 let position = pose.transform.position;
                                 let orientation = pose.transform.orientation;
 
-                                if (pose.emulatedPosition) {
-                                    setMessage('Viewer pose is emulated');
+                                if (time - lastSendTime > 100) {
+                                    lastSendTime = time;
+                                    if (pose.emulatedPosition) {
+                                        setMessage('Viewer pose is emulated');
+                                    }
+                                    setMessage(`Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}`);
+                                    // setMessage(`Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}`);
                                 }
-
-                                setMessage(`Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}`);
-                                // setMessage(`Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}`);
                             } else {
                                 setMessage('No viewer pose available');
                             }
