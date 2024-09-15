@@ -108,6 +108,7 @@
         <div class="bottom-controls">
             <div class="message" id="message"></div>
             <button class="button" id="exit-button">X</button>
+            <button class="button" id="frame-button">Gripper</button>
             <button class="button" id="move-button">Move</button>
         </div>
     </div>
@@ -155,17 +156,29 @@
         }
 
         let moveButtonPressed = false;
+        let referenceFrame = 'gripper';
 
         const appDom = document.querySelector('#app');
         const moveButtonDom = document.querySelector('#move-button');
         const exitButtonDom = document.querySelector('#exit-button');
         const startButtonDom = document.querySelector('#start-button');
+        const frameButtonDom = document.querySelector('#frame-button');
 
         moveButtonDom.addEventListener('touchstart', () => {
             moveButtonPressed = true;
         });
         moveButtonDom.addEventListener('touchend', () => {
             moveButtonPressed = false;
+        });
+
+        frameButtonDom.addEventListener('click', () => {
+            if (referenceFrame === 'gripper') {
+                referenceFrame = 'base';
+                frameButtonDom.textContent = 'Base';
+            } else {
+                referenceFrame = 'gripper';
+                frameButtonDom.textContent = 'Gripper';
+            }
         });
 
         setMessage('Click the button to start WebXR');
@@ -228,7 +241,8 @@
                                             z: orientation.z,
                                             w: orientation.w
                                         },
-                                        move: moveButtonPressed
+                                        move: moveButtonPressed,
+                                        reference_frame: referenceFrame
                                     });
                                 }
                             } else {

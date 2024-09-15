@@ -33,17 +33,21 @@ class TeleopPublisher:
         self.set_initial_pose(initial_pose)        
 
     def set_initial_pose(self, pose):
-        self.pose = pose @ TF_RUB2FLU
+        self.pose = pose
 
-    def publish_pose(self):
-        position = self.pose[:3, 3]
-        orientation = t3d.euler.mat2euler(self.pose[:3, :3])
+    def publish_pose(self, pose):
+        position = pose[:3, 3]
+        orientation = t3d.euler.mat2euler(pose[:3, :3])
         print(f'position: {position}, orientation: {orientation}')
 
     def update(self, message):
         move = message['move']
         position = message['position']
         orientation = message['orientation']
+        reference_frame = message['reference_frame']
+
+        if reference_frame not in ['gripper', 'base']:
+            raise ValueError(f'Unknown reference frame: {reference_frame} (should be "gripper" or "base")')
 
         position = np.array([position['x'], position['y'], position['z']])
         quat = np.array([orientation['w'], orientation['x'], orientation['y'], orientation['z']])
@@ -58,24 +62,32 @@ class TeleopPublisher:
             t3d.quaternions.quat2mat(quat),
             [1, 1, 1]
         )
+        received_pose = TF_RUB2FLU @ received_pose_rub
+        received_pose[:3, :3] = received_pose[:3, :3] @ np.linalg.inv(TF_RUB2FLU[:3, :3])
 
         # Pose jump protection
         if self.previous_received_pose is not None:
-            if not are_close(received_pose_rub, self.previous_received_pose, lin_tol=3e-2, ang_tol=math.radians(15)):
+            if not are_close(received_pose, self.previous_received_pose, lin_tol=3e-2, ang_tol=math.radians(15)):
                 print('Pose jump is detected, resetting the pose')
                 self.relative_pose_init = None
-                self.previous_received_pose = received_pose_rub
+                self.previous_received_pose = received_pose
                 return
-        self.previous_received_pose = received_pose_rub
+        self.previous_received_pose = received_pose
 
         # Accumulate the pose and publish
         if self.relative_pose_init is None:
-            self.relative_pose_init = received_pose_rub
+            self.relative_pose_init = received_pose
             self.absolute_pose_init = self.pose
+            self.previous_received_pose = None
 
-        relative_pose = np.linalg.inv(self.relative_pose_init) @ received_pose_rub
-        self.pose = self.absolute_pose_init @ relative_pose
-        self.publish_pose(self.pose @ np.linalg.inv(TF_RUB2FLU))
+        relative_pose = np.linalg.inv(self.relative_pose_init) @ received_pose
+        if reference_frame == 'gripper':
+            self.pose = self.absolute_pose_init @ relative_pose
+        else:
+            self.pose = np.eye(4)
+            self.pose[:3, 3] = self.absolute_pose_init[:3, 3] + relative_pose[:3, 3]
+            self.pose[:3, :3] = relative_pose[:3, :3] @ self.absolute_pose_init[:3, :3]
+        self.publish_pose(self.pose)
 
 
 class ROSTeleopPublisher(TeleopPublisher):
