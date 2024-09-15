@@ -80,7 +80,7 @@
 
         .message {
             margin: 10px;
-            font-size: 16px;
+            font-size: 12px;
         }
 
         .app {
@@ -98,7 +98,7 @@
     <div class="container">
         <div class="intro-content">
             <h1>Spes Teleop</h1>
-            <p>Control your robot remotely with real-time precision. Experience next-level interaction using AR.</p>
+            <p>Teleop your robot arm with ease. No hardware. No firmware. Just your phone.</p>
             <button class="button" id="start-button">Start AR</button>
             <div class="message" id="log"></div>
         </div>
@@ -108,7 +108,7 @@
         <div class="bottom-controls">
             <div class="message" id="message"></div>
             <button class="button" id="exit-button">X</button>
-            <button class="button" id="frame-button">Gripper</button>
+            <button class="button" id="frame-button">Base</button>
             <button class="button" id="move-button">Move</button>
         </div>
     </div>
@@ -121,22 +121,6 @@
 
             document.querySelector('#message').textContent = message;
             document.querySelector('#log').textContent = message;
-
-            // fetch('/log', {
-            //     method: 'POST',
-            //     headers: {
-            //         'Content-Type': 'application/json'
-            //     },
-            //     body: JSON.stringify({
-            //         message: message
-            //     })
-            // }).then((response) => {
-            //     return response.json();
-            // }).then((data) => {
-            //     console.log(data);
-            // }).catch((err) => {
-            //     console.error('Failed to send message to server:', err);
-            // });
         }
 
         const sendPose = (pose) => {
@@ -156,7 +140,7 @@
         }
 
         let moveButtonPressed = false;
-        let referenceFrame = 'gripper';
+        let referenceFrame = 'base';
 
         const appDom = document.querySelector('#app');
         const moveButtonDom = document.querySelector('#move-button');

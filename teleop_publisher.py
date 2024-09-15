@@ -23,22 +23,21 @@ def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
 
 class TeleopPublisher:
     def __init__(self, initial_pose=None):
-        self.relative_pose_init = None
-        self.absolute_pose_init = None
-        self.previous_received_pose = None
-        self.pose = None
+        self.__relative_pose_init = None
+        self.__absolute_pose_init = None
+        self.__previous_received_pose = None
+        self.__callbacks = []
+        self.__pose = None
 
         if initial_pose is None:
             initial_pose = np.eye(4)
-        self.set_initial_pose(initial_pose)        
+        self.set_pose(initial_pose)        
 
-    def set_initial_pose(self, pose):
-        self.pose = pose
+    def set_pose(self, pose):
+        self.__pose = pose
 
-    def publish_pose(self, pose):
-        position = pose[:3, 3]
-        orientation = t3d.euler.mat2euler(pose[:3, :3])
-        print(f'position: {position}, orientation: {orientation}')
+    def register_callback(self, callback):
+        self.__callbacks.append(callback)
 
     def update(self, message):
         move = message['move']
@@ -53,8 +52,8 @@ class TeleopPublisher:
         quat = np.array([orientation['w'], orientation['x'], orientation['y'], orientation['z']])
 
         if not move:
-            self.relative_pose_init = None
-            self.absolute_pose_init = None
+            self.__relative_pose_init = None
+            self.__absolute_pose_init = None
             return
         
         received_pose_rub = t3d.affines.compose(
@@ -66,33 +65,37 @@ class TeleopPublisher:
         received_pose[:3, :3] = received_pose[:3, :3] @ np.linalg.inv(TF_RUB2FLU[:3, :3])
 
         # Pose jump protection
-        if self.previous_received_pose is not None:
-            if not are_close(received_pose, self.previous_received_pose, lin_tol=3e-2, ang_tol=math.radians(15)):
+        if self.__previous_received_pose is not None:
+            if not are_close(received_pose, self.__previous_received_pose, lin_tol=3e-2, ang_tol=math.radians(15)):
                 print('Pose jump is detected, resetting the pose')
-                self.relative_pose_init = None
-                self.previous_received_pose = received_pose
+                self.__relative_pose_init = None
+                self.__previous_received_pose = received_pose
                 return
-        self.previous_received_pose = received_pose
+        self.__previous_received_pose = received_pose
 
         # Accumulate the pose and publish
-        if self.relative_pose_init is None:
-            self.relative_pose_init = received_pose
-            self.absolute_pose_init = self.pose
-            self.previous_received_pose = None
+        if self.__relative_pose_init is None:
+            self.__relative_pose_init = received_pose
+            self.__absolute_pose_init = self.__pose
+            self.__previous_received_pose = None
 
-        relative_pose = np.linalg.inv(self.relative_pose_init) @ received_pose
+        relative_pose = np.linalg.inv(self.__relative_pose_init) @ received_pose
         if reference_frame == 'gripper':
-            self.pose = self.absolute_pose_init @ relative_pose
+            self.__pose = self.__absolute_pose_init @ relative_pose
         else:
-            self.pose = np.eye(4)
-            self.pose[:3, 3] = self.absolute_pose_init[:3, 3] + relative_pose[:3, 3]
-            self.pose[:3, :3] = relative_pose[:3, :3] @ self.absolute_pose_init[:3, :3]
-        self.publish_pose(self.pose)
+            self.__pose = np.eye(4)
+            self.__pose[:3, 3] = self.__absolute_pose_init[:3, 3] + relative_pose[:3, 3]
+            self.__pose[:3, :3] = relative_pose[:3, :3] @ self.__absolute_pose_init[:3, :3]
+        
+        # Notify the subscribers
+        for callback in self.__callbacks:
+            callback(self.__pose)
 
 
-class ROSTeleopPublisher(TeleopPublisher):
+class ROSTeleopPublisher:
     def __init__(self, initial_pose=None):
-        super().__init__(initial_pose)
+        self.teleop = TeleopPublisher(initial_pose)
+        self.teleop.register_callback(self.publish_pose)
         
         import rclpy
         from tf2_ros import TransformBroadcaster
@@ -103,6 +106,9 @@ class ROSTeleopPublisher(TeleopPublisher):
         self.tf_message = TransformStamped()
         self.node = rclpy.create_node('teleop_publisher')
         self.broadcaster = TransformBroadcaster(self.node)
+
+    def update(self, message):
+        self.teleop.update(message)
 
     def publish_pose(self, pose):
         self.tf_message.header.stamp = self.node.get_clock().now().to_msg()
