@@ -1,8 +1,11 @@
 from flask import Flask, send_from_directory
 import ssl
 from flask import request
+from teleop_publisher import TeleopPublisher, ROSTeleopPublisher
+
 
 app = Flask(__name__)
+teleop = ROSTeleopPublisher()
 
 
 @app.route('/<path:filename>')
@@ -10,12 +13,12 @@ def serve_file(filename):
     return send_from_directory('.', filename)
 
 
-@app.route('/pose')
+@app.route('/pose', methods=['POST'])
 def pose():
-    x = request.args.get('x')
-    y = request.args.get('y')
-    z = request.args.get('z')
-    print(x, y, z)
+    json_data = request.get_json()
+    teleop.update(json_data)
+
+    return {'status': 'ok'}
 
 
 @app.route('/log', methods=['POST'])

@@ -7,12 +7,108 @@
     <title>Teleop</title>
 
     <script src='https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.js'></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(to bottom, #1a237e, #3949ab);
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 350px;
+            padding: 20px;
+        }
+
+        .intro-content h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #ffc107;
+        }
+
+        .intro-content p {
+            font-size: 16px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                max-width: 400px;
+            }
+
+            .intro-content h1 {
+                font-size: 28px;
+            }
+        }
+
+        .bottom-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .button {
+            background-color: #ffca28;
+            color: #1a237e;
+            border: none;
+            padding: 10px 20px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            user-select: none;
+        }
+
+        .button:hover {
+            background-color: #ffb300;
+        }
+
+        .bottom-controls>.message {
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .app {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: none;
+        }
+    </style>
 </head>
 
 <body>
-    <main id="message"></main>
+    <div class="container">
+        <div class="intro-content">
+            <h1>Spes Teleop</h1>
+            <p>Control your robot remotely with real-time precision. Experience next-level interaction using AR.</p>
+            <button class="button" id="start-button">Start AR</button>
+        </div>
+    </div>
 
-    <button id="button">Start</button>
+    <div class="app" id="app">
+        <div class="bottom-controls">
+            <div class="message" id="message"></div>
+            <button class="button" id="move-button">Move</button>
+        </div>
+    </div>
 
     <script>
         var polyfill = new WebXRPolyfill();
@@ -22,28 +118,62 @@
 
             document.querySelector('#message').textContent = message;
 
-            fetch('/log', {
+            // fetch('/log', {
+            //     method: 'POST',
+            //     headers: {
+            //         'Content-Type': 'application/json'
+            //     },
+            //     body: JSON.stringify({
+            //         message: message
+            //     })
+            // }).then((response) => {
+            //     return response.json();
+            // }).then((data) => {
+            //     console.log(data);
+            // }).catch((err) => {
+            //     console.error('Failed to send message to server:', err);
+            // });
+        }
+
+        const sendPose = (pose) => {
+            fetch('/pose', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    message: message
-                })
+                body: JSON.stringify(pose)
             }).then((response) => {
                 return response.json();
             }).then((data) => {
                 console.log(data);
             }).catch((err) => {
-                console.error('Failed to send message to server:', err);
+                console.error('Failed to send pose to server:', err);
             });
         }
 
+        let moveButtonPressed = false;
+
+        const appDom = document.querySelector('#app');
+        const moveButtonDom = document.querySelector('#move-button');
+        moveButtonDom.addEventListener('touchstart', () => {
+            moveButtonPressed = true;
+        });
+        moveButtonDom.addEventListener('touchend', () => {
+            moveButtonPressed = false;
+        });
+
         setMessage('Click the button to start WebXR');
         let lastSendTime = performance.now();
-        document.querySelector('#button').addEventListener('click', () => {
+        document.querySelector('#start-button').addEventListener('click', () => {
             if (navigator.xr) {
-                navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['unbounded', 'local-floor']}).then((session) => {  // Changed to immersive-ar
+                navigator.xr.requestSession('immersive-ar', {
+                    requiredFeatures: ['unbounded', 'local-floor'],
+                    optionalFeatures: ['dom-overlay', 'dom-overlay-for-handheld-ar'],
+                    domOverlay: { root: document.querySelector('#app') }
+                }).then((session) => {
+                    appDom.style.display = 'block';
+                    moveButtonPressed = false;
+
                     const glCanvas = document.createElement('canvas');
                     const gl = glCanvas.getContext('webgl', { xrCompatible: true });
                     session.updateRenderState({
@@ -66,8 +196,25 @@
                                     if (pose.emulatedPosition) {
                                         setMessage('Viewer pose is emulated');
                                     }
-                                    setMessage(`Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}`);
-                                    // setMessage(`Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}`);
+                                    setMessage(`
+                                        Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}
+                                        Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}
+                                        Move: ${moveButtonPressed}
+                                    `);
+                                    sendPose({
+                                        position: {
+                                            x: position.x,
+                                            y: position.y,
+                                            z: position.z
+                                        },
+                                        orientation: {
+                                            x: orientation.x,
+                                            y: orientation.y,
+                                            z: orientation.z,
+                                            w: orientation.w
+                                        },
+                                        move: moveButtonPressed
+                                    });
                                 }
                             } else {
                                 setMessage('No viewer pose available');
