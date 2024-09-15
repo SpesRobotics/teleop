@@ -1,4 +1,5 @@
 import numpy as np
+import math
 import transforms3d as t3d
 
 
@@ -10,10 +11,21 @@ TF_RUB2FLU = np.array([
 ])
 
 
+def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
+    if b is None:
+        b = np.eye(4)
+    d = np.linalg.inv(a) @ b
+    if not np.allclose(d[:3, 3], np.zeros(3), atol=lin_tol):
+        return False
+    rpy = t3d.euler.mat2euler(d[:3, :3])
+    return np.allclose(rpy, np.zeros(3), atol=ang_tol)
+
+
 class TeleopPublisher:
     def __init__(self, initial_pose=None):
         self.relative_pose_init = None
         self.absolute_pose_init = None
+        self.previous_received_pose = None
         self.pose = None
 
         if initial_pose is None:
@@ -47,6 +59,16 @@ class TeleopPublisher:
             [1, 1, 1]
         )
 
+        # Pose jump protection
+        if self.previous_received_pose is not None:
+            if not are_close(received_pose_rub, self.previous_received_pose, lin_tol=3e-2, ang_tol=math.radians(15)):
+                print('Pose jump is detected, resetting the pose')
+                self.relative_pose_init = None
+                self.previous_received_pose = received_pose_rub
+                return
+        self.previous_received_pose = received_pose_rub
+
+        # Accumulate the pose and publish
         if self.relative_pose_init is None:
             self.relative_pose_init = received_pose_rub
             self.absolute_pose_init = self.pose
