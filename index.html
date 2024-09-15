@@ -78,8 +78,8 @@
             background-color: #ffb300;
         }
 
-        .bottom-controls>.message {
-            margin-bottom: 10px;
+        .message {
+            margin: 10px;
             font-size: 16px;
         }
 
@@ -100,12 +100,14 @@
             <h1>Spes Teleop</h1>
             <p>Control your robot remotely with real-time precision. Experience next-level interaction using AR.</p>
             <button class="button" id="start-button">Start AR</button>
+            <div class="message" id="log"></div>
         </div>
     </div>
 
     <div class="app" id="app">
         <div class="bottom-controls">
             <div class="message" id="message"></div>
+            <button class="button" id="exit-button">X</button>
             <button class="button" id="move-button">Move</button>
         </div>
     </div>
@@ -117,6 +119,7 @@
             console.log(message);
 
             document.querySelector('#message').textContent = message;
+            document.querySelector('#log').textContent = message;
 
             // fetch('/log', {
             //     method: 'POST',
@@ -155,6 +158,9 @@
 
         const appDom = document.querySelector('#app');
         const moveButtonDom = document.querySelector('#move-button');
+        const exitButtonDom = document.querySelector('#exit-button');
+        const startButtonDom = document.querySelector('#start-button');
+
         moveButtonDom.addEventListener('touchstart', () => {
             moveButtonPressed = true;
         });
@@ -164,13 +170,22 @@
 
         setMessage('Click the button to start WebXR');
         let lastSendTime = performance.now();
-        document.querySelector('#start-button').addEventListener('click', () => {
+        startButtonDom.addEventListener('click', () => {
             if (navigator.xr) {
                 navigator.xr.requestSession('immersive-ar', {
                     requiredFeatures: ['unbounded', 'local-floor'],
                     optionalFeatures: ['dom-overlay', 'dom-overlay-for-handheld-ar'],
                     domOverlay: { root: document.querySelector('#app') }
                 }).then((session) => {
+                    exitButtonDom.addEventListener('click', () => {
+                        session.end()
+                    });
+
+                    session.addEventListener('end', () => {
+                        appDom.style.display = 'none';
+                        setMessage('Click the button to start WebXR');
+                    });
+
                     appDom.style.display = 'block';
                     moveButtonPressed = false;
 
@@ -197,7 +212,7 @@
                                         setMessage('Viewer pose is emulated');
                                     }
                                     setMessage(`
-                                        Position: x=${position.x.toFixed(2)}, y=${position.y.toFixed(2)}, z=${position.z.toFixed(2)}
+                                        Position: x=${position.x.toFixed(3)}, y=${position.y.toFixed(3)}, z=${position.z.toFixed(3)}
                                         Orientation: x=${orientation.x.toFixed(2)}, y=${orientation.y.toFixed(2)}, z=${orientation.z.toFixed(2)}, w=${orientation.w.toFixed(2)}
                                         Move: ${moveButtonPressed}
                                     `);
