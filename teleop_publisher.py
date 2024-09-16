@@ -36,9 +36,8 @@ class TeleopPublisher:
     def set_pose(self, pose):
         self.__pose = pose
 
-    def register_callback(self, callback):
+    def subscribe(self, callback):
         self.__callbacks.append(callback)
-
 
     def __notify_subscribers(self, pose, message):
         for callback in self.__callbacks:
@@ -100,7 +99,7 @@ class TeleopPublisher:
 class ROSTeleopPublisher:
     def __init__(self, initial_pose=None):
         self.teleop = TeleopPublisher(initial_pose)
-        self.teleop.register_callback(self.publish_pose)
+        self.teleop.subscribe(self.publish_pose)
         
         import rclpy
         from tf2_ros import TransformBroadcaster
