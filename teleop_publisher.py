@@ -39,6 +39,11 @@ class TeleopPublisher:
     def register_callback(self, callback):
         self.__callbacks.append(callback)
 
+
+    def __notify_subscribers(self, pose, message):
+        for callback in self.__callbacks:
+            callback(pose, message)
+
     def update(self, message):
         move = message['move']
         position = message['position']
@@ -54,6 +59,7 @@ class TeleopPublisher:
         if not move:
             self.__relative_pose_init = None
             self.__absolute_pose_init = None
+            self.__notify_subscribers(self.__pose, message)
             return
         
         received_pose_rub = t3d.affines.compose(
@@ -66,7 +72,7 @@ class TeleopPublisher:
 
         # Pose jump protection
         if self.__previous_received_pose is not None:
-            if not are_close(received_pose, self.__previous_received_pose, lin_tol=3e-2, ang_tol=math.radians(15)):
+            if not are_close(received_pose, self.__previous_received_pose, lin_tol=6e-2, ang_tol=math.radians(25)):
                 print('Pose jump is detected, resetting the pose')
                 self.__relative_pose_init = None
                 self.__previous_received_pose = received_pose
@@ -88,8 +94,7 @@ class TeleopPublisher:
             self.__pose[:3, :3] = relative_pose[:3, :3] @ self.__absolute_pose_init[:3, :3]
         
         # Notify the subscribers
-        for callback in self.__callbacks:
-            callback(self.__pose)
+        self.__notify_subscribers(self.__pose, message)
 
 
 class ROSTeleopPublisher:
@@ -110,7 +115,11 @@ class ROSTeleopPublisher:
     def update(self, message):
         self.teleop.update(message)
 
-    def publish_pose(self, pose):
+    def publish_pose(self, pose, params):
+        if not params['move']:
+            # self.teleop.set_pose(current_robot_pose)
+            return
+
         self.tf_message.header.stamp = self.node.get_clock().now().to_msg()
         self.tf_message.header.frame_id = 'base_link'
         self.tf_message.child_frame_id = 'tcp'
