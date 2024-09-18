@@ -1,6 +1,10 @@
-import numpy as np
+import ssl
+import os
 import math
+import logging
+from flask import Flask, send_from_directory, request
 import transforms3d as t3d
+import numpy as np
 
 
 TF_RUB2FLU = np.array([
@@ -9,6 +13,7 @@ TF_RUB2FLU = np.array([
     [0,  1,  0, 0],
     [0,  0,  0, 1]
 ])
+THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
@@ -21,17 +26,30 @@ def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
     return np.allclose(rpy, np.zeros(3), atol=ang_tol)
 
 
-class TeleopPublisher:
-    def __init__(self, initial_pose=None):
+class Teleop:
+    def __init__(self, host='0.0.0.0', port=4443, ssl_context=None):
+        self.__host = host
+        self.__port = port
+        self.__ssl_context = ssl_context
+
         self.__relative_pose_init = None
         self.__absolute_pose_init = None
         self.__previous_received_pose = None
         self.__callbacks = []
-        self.__pose = None
+        self.__pose = np.eye(4)
 
-        if initial_pose is None:
-            initial_pose = np.eye(4)
-        self.set_pose(initial_pose)        
+        if self.__ssl_context is None:
+            self.__ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+            self.__ssl_context.load_cert_chain(
+                certfile=os.path.join(THIS_DIR, 'cert.pem'),
+                keyfile=os.path.join(THIS_DIR, 'key.pem')
+            )
+            
+        self.app = Flask(__name__)
+        
+        # self.lib_instance = YourLibraryClass(self.config)
+        
+        self.__register_routes()
 
     def set_pose(self, pose):
         self.__pose = pose
@@ -43,7 +61,7 @@ class TeleopPublisher:
         for callback in self.__callbacks:
             callback(pose, message)
 
-    def update(self, message):
+    def __update(self, message):
         move = message['move']
         position = message['position']
         orientation = message['orientation']
@@ -95,40 +113,34 @@ class TeleopPublisher:
         # Notify the subscribers
         self.__notify_subscribers(self.__pose, message)
 
+    def __register_routes(self):
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        log.disabled = True
 
-class ROSTeleopPublisher:
-    def __init__(self, initial_pose=None):
-        self.teleop = TeleopPublisher(initial_pose)
-        self.teleop.subscribe(self.publish_pose)
-        
-        import rclpy
-        from tf2_ros import TransformBroadcaster
-        from geometry_msgs.msg import TransformStamped
+        @self.app.route('/<path:filename>')
+        def serve_file(filename):
+            return send_from_directory(THIS_DIR, filename)
 
-        rclpy.init()
 
-        self.tf_message = TransformStamped()
-        self.node = rclpy.create_node('teleop_publisher')
-        self.broadcaster = TransformBroadcaster(self.node)
+        @self.app.route('/pose', methods=['POST'])
+        def pose():
+            json_data = request.get_json()
+            self.__update(json_data)
 
-    def update(self, message):
-        self.teleop.update(message)
+            return {'status': 'ok'}
 
-    def publish_pose(self, pose, params):
-        if not params['move']:
-            # self.teleop.set_pose(current_robot_pose)
-            return
 
-        self.tf_message.header.stamp = self.node.get_clock().now().to_msg()
-        self.tf_message.header.frame_id = 'base_link'
-        self.tf_message.child_frame_id = 'tcp'
-        self.tf_message.transform.translation.x = pose[0, 3]
-        self.tf_message.transform.translation.y = pose[1, 3]
-        self.tf_message.transform.translation.z = pose[2, 3]
-        quat = t3d.quaternions.mat2quat(pose[:3, :3])
-        self.tf_message.transform.rotation.w = quat[0]
-        self.tf_message.transform.rotation.x = quat[1]
-        self.tf_message.transform.rotation.y = quat[2]
-        self.tf_message.transform.rotation.z = quat[3]
+        @self.app.route('/log', methods=['POST'])
+        def log():
+            json_data = request.get_json()
+            print(json_data)
+            return {'status': 'ok'}
 
-        self.broadcaster.sendTransform(self.tf_message)
+
+        @self.app.route('/')
+        def index():
+            return send_from_directory(THIS_DIR, 'index.html')
+
+    def run(self):
+        self.app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context)
