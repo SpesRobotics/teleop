@@ -15,7 +15,7 @@ python3 -m teleop.basic
 A ROS 2 interface that publishes the teleop response to a topic.
 
 ```bash
-ros2 run teleop.ros2
+python3 -m teleop.ros2
 ```
 
 ## Development
