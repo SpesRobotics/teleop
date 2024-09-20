@@ -1,6 +1,8 @@
 import numpy as np
 import math
 import transforms3d as t3d
+from teleop import Teleop
+
 
 
 def ros2numpy(pose):
@@ -50,86 +52,13 @@ def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
     return np.allclose(rpy, np.zeros(3), atol=ang_tol)
 
 
-class TeleopPublisher:
-    def __init__(self, initial_pose=None):
-        self.__relative_pose_init = None
-        self.__absolute_pose_init = None
-        self.__previous_received_pose = None
-        self.__callbacks = []
-        self.__pose = None
-
-        if initial_pose is None:
-            initial_pose = np.eye(4)
-        self.set_pose(initial_pose)        
-
-    def set_pose(self, pose):
-        self.__pose = pose
-
-    def subscribe(self, callback):
-        self.__callbacks.append(callback)
-
-    def __notify_subscribers(self, pose, message):
-        for callback in self.__callbacks:
-            callback(pose, message)
-
-    def update(self, message):
-        move = message['move']
-        position = message['position']
-        orientation = message['orientation']
-        reference_frame = message['reference_frame']
-
-        if reference_frame not in ['gripper', 'base']:
-            raise ValueError(f'Unknown reference frame: {reference_frame} (should be "gripper" or "base")')
-
-        position = np.array([position['x'], position['y'], position['z']])
-        quat = np.array([orientation['w'], orientation['x'], orientation['y'], orientation['z']])
-
-        if not move:
-            self.__relative_pose_init = None
-            self.__absolute_pose_init = None
-            self.__notify_subscribers(self.__pose, message)
-            return
-        
-        received_pose_rub = t3d.affines.compose(
-            position,
-            t3d.quaternions.quat2mat(quat),
-            [1, 1, 1]
-        )
-        received_pose = TF_RUB2FLU @ received_pose_rub
-        received_pose[:3, :3] = received_pose[:3, :3] @ np.linalg.inv(TF_RUB2FLU[:3, :3])
-
-        # Pose jump protection
-        if self.__previous_received_pose is not None:
-            if not are_close(received_pose, self.__previous_received_pose, lin_tol=6e-2, ang_tol=math.radians(25)):
-                print('Pose jump is detected, resetting the pose')
-                self.__relative_pose_init = None
-                self.__previous_received_pose = received_pose
-                return
-        self.__previous_received_pose = received_pose
-
-        # Accumulate the pose and publish
-        if self.__relative_pose_init is None:
-            self.__relative_pose_init = received_pose
-            self.__absolute_pose_init = self.__pose
-            self.__previous_received_pose = None
-
-        relative_pose = np.linalg.inv(self.__relative_pose_init) @ received_pose
-        if reference_frame == 'gripper':
-            self.__pose = self.__absolute_pose_init @ relative_pose
-        else:
-            self.__pose = np.eye(4)
-            self.__pose[:3, 3] = self.__absolute_pose_init[:3, 3] + relative_pose[:3, 3]
-            self.__pose[:3, :3] = relative_pose[:3, :3] @ self.__absolute_pose_init[:3, :3]
-        
-        # Notify the subscribers
-        self.__notify_subscribers(self.__pose, message)
-
-
 class ROSTeleopPublisher():
-    def __init__(self, initial_pose=None):
-        self.teleop = TeleopPublisher(initial_pose)
-        self.teleop.subscribe(self.publish_pose)
+    def __init__(self):
+        print('----------')
+        self.teleop = Teleop(host='192.168.2.168', port=5000)
+        print('----------')
         
+        self.teleop.subscribe(self.publish_pose)
         from geometry_msgs.msg import PoseStamped
         import rclpy
 
@@ -150,6 +79,7 @@ class ROSTeleopPublisher():
         self.message = PoseStamped()
         self.is_set_init_pose = False
         self.current_robot_pose = None
+        self.teleop.run()
 
     def update(self, message):
         self.teleop.update(message)
@@ -172,7 +102,7 @@ class ROSTeleopPublisher():
             return
         
         if not params['move']:
-            pose  =ros2numpy(self.current_robot_pose.pose)
+            pose = ros2numpy(self.current_robot_pose.pose)
             print(pose)
             self.teleop.set_pose(pose)
             return
@@ -189,3 +119,7 @@ class ROSTeleopPublisher():
         self.message.pose.orientation.z = quat[3]
 
         self.publisher_speed_limiter.publish(self.message)
+
+
+if __name__=='__main__':
+    ROSTeleopPublisher()
