@@ -3,6 +3,35 @@ import math
 import transforms3d as t3d
 
 
+def ros2numpy(pose):
+    import geometry_msgs.msg
+
+    xyz = None
+    q = None
+
+    if isinstance(pose, geometry_msgs.msg.PoseStamped):
+        pose = pose.pose
+    elif isinstance(pose, geometry_msgs.msg.TransformStamped):
+        pose = pose.transform
+
+    if isinstance(pose, geometry_msgs.msg.Pose):
+        xyz = [pose.position.x, pose.position.y, pose.position.z]
+        q = [
+            pose.orientation.w,
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z,
+        ]
+    elif isinstance(pose, geometry_msgs.msg.Transform):
+        xyz = [pose.translation.x, pose.translation.y, pose.translation.z]
+        q = [pose.rotation.w, pose.rotation.x, pose.rotation.y, pose.rotation.z]
+    else:
+        raise ValueError("Unknown type")
+
+    transform = t3d.affines.compose(xyz, t3d.quaternions.quat2mat(q), [1, 1, 1])
+    return transform
+
+
 TF_RUB2FLU = np.array([
     [0,  0, -1, 0],
     [-1, 0,  0, 0],
@@ -96,39 +125,67 @@ class TeleopPublisher:
         self.__notify_subscribers(self.__pose, message)
 
 
-class ROSTeleopPublisher:
+class ROSTeleopPublisher():
     def __init__(self, initial_pose=None):
         self.teleop = TeleopPublisher(initial_pose)
         self.teleop.subscribe(self.publish_pose)
         
+        from geometry_msgs.msg import PoseStamped
         import rclpy
-        from tf2_ros import TransformBroadcaster
-        from geometry_msgs.msg import TransformStamped
 
+        self.rclpy = rclpy
         rclpy.init()
+        self.node = rclpy.create_node('test_teleop')
+        
+        self.current_pose_subscriber = self.node.create_subscription(
+            PoseStamped,
+            '/current_pose',
+            self.current_pose_callback,
+            1)
+        self.current_pose_subscriber
 
-        self.tf_message = TransformStamped()
-        self.node = rclpy.create_node('teleop_publisher')
-        self.broadcaster = TransformBroadcaster(self.node)
+        self.publisher_speed_limiter = self.node.create_publisher(
+            PoseStamped, '/target_frame_raw', 1)
+
+        self.message = PoseStamped()
+        self.is_set_init_pose = False
+        self.current_robot_pose = None
 
     def update(self, message):
         self.teleop.update(message)
 
-    def publish_pose(self, pose, params):
-        if not params['move']:
-            # self.teleop.set_pose(current_robot_pose)
+    def current_pose_callback(self, msg):
+        print(msg)
+        self.current_robot_pose = msg
+        if self.is_set_init_pose:
             return
+        self.teleop.set_pose(msg)
+        self.is_set_init_pose = True
+        
+    def publish_pose(self, pose, params):
+        try:
+            self.rclpy.spin_once(self.node, timeout_sec=0.05)
+        except Exception as e:
+            pass
 
-        self.tf_message.header.stamp = self.node.get_clock().now().to_msg()
-        self.tf_message.header.frame_id = 'base_link'
-        self.tf_message.child_frame_id = 'tcp'
-        self.tf_message.transform.translation.x = pose[0, 3]
-        self.tf_message.transform.translation.y = pose[1, 3]
-        self.tf_message.transform.translation.z = pose[2, 3]
+        if self.current_robot_pose is None:
+            return
+        
+        if not params['move']:
+            pose  =ros2numpy(self.current_robot_pose.pose)
+            print(pose)
+            self.teleop.set_pose(pose)
+            return
+        
+        self.message.header.stamp = self.node.get_clock().now().to_msg()
+        self.message.header.frame_id = 'base_link'
+        self.message.pose.position.x = pose[0, 3]
+        self.message.pose.position.y = pose[1, 3]
+        self.message.pose.position.z = pose[2, 3]
         quat = t3d.quaternions.mat2quat(pose[:3, :3])
-        self.tf_message.transform.rotation.w = quat[0]
-        self.tf_message.transform.rotation.x = quat[1]
-        self.tf_message.transform.rotation.y = quat[2]
-        self.tf_message.transform.rotation.z = quat[3]
+        self.message.pose.orientation.w = quat[0]
+        self.message.pose.orientation.x = quat[1]
+        self.message.pose.orientation.y = quat[2]
+        self.message.pose.orientation.z = quat[3]
 
-        self.broadcaster.sendTransform(self.tf_message)
+        self.publisher_speed_limiter.publish(self.message)
