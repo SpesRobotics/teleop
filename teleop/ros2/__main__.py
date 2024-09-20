@@ -4,9 +4,7 @@ import argparse
 
 try:
     import rclpy
-    from geometry_msgs.msg import PoseStamped
-
-    
+    from geometry_msgs.msg import PoseStamped    
 except ImportError:
     raise ImportError(
         "ROS2 is not sourced. Please source ROS2 before running this script."
