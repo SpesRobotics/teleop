@@ -2,6 +2,7 @@ import ssl
 import os
 import math
 import logging
+from typing import Callable
 from flask import Flask, send_from_directory, request
 import transforms3d as t3d
 import numpy as np
@@ -12,6 +13,18 @@ THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
+    """
+    Check if two transformation matrices are close to each other within specified tolerances.
+
+    Parameters:
+        a (numpy.ndarray): The first transformation matrix.
+        b (numpy.ndarray, optional): The second transformation matrix. If not provided, it defaults to the identity matrix.
+        lin_tol (float, optional): The linear tolerance for closeness. Defaults to 1e-9.
+        ang_tol (float, optional): The angular tolerance for closeness. Defaults to 1e-9.
+
+    Returns:
+        bool: True if the matrices are close, False otherwise.
+    """
     if b is None:
         b = np.eye(4)
     d = np.linalg.inv(a) @ b
@@ -22,6 +35,14 @@ def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
 
 
 class Teleop:
+    """
+    Teleop class for controlling a robot remotely.
+
+    Args:
+        host (str, optional): The host IP address. Defaults to "0.0.0.0".
+        port (int, optional): The port number. Defaults to 4443.
+        ssl_context (ssl.SSLContext, optional): The SSL context for secure communication. Defaults to None.
+    """
     def __init__(self, host="0.0.0.0", port=4443, ssl_context=None):
         self.__host = host
         self.__port = port
@@ -40,16 +61,28 @@ class Teleop:
                 keyfile=os.path.join(THIS_DIR, "key.pem"),
             )
 
-        self.app = Flask(__name__)
-
-        # self.lib_instance = YourLibraryClass(self.config)
-
+        self.__app = Flask(__name__)
         self.__register_routes()
 
-    def set_pose(self, pose):
+    def set_pose(self, pose: np.ndarray) -> None:
+        """
+        Set the current pose of the end-effector.
+
+        Parameters:
+        - pose (np.ndarray): A 4x4 transformation matrix representing the pose.
+        """
         self.__pose = pose
 
-    def subscribe(self, callback):
+    def subscribe(self, callback: Callable[[np.ndarray, dict], None]) -> None:
+        """
+        Subscribe to receive updates from the teleop module.
+
+        Parameters:
+            callback (Callable[[np.ndarray, dict]]): A callback function that will be called when pose updates are received.
+                The callback function should take two arguments:
+                    - np.ndarray: A 4x4 transformation matrix representing the end-effector target pose.
+                    - dict: A dictionary containing additional information.
+        """
         self.__callbacks.append(callback)
 
     def __notify_subscribers(self, pose, message):
@@ -124,26 +157,29 @@ class Teleop:
         log.setLevel(logging.ERROR)
         log.disabled = True
 
-        @self.app.route("/<path:filename>")
+        @self.__app.route("/<path:filename>")
         def serve_file(filename):
             return send_from_directory(THIS_DIR, filename)
 
-        @self.app.route("/pose", methods=["POST"])
+        @self.__app.route("/pose", methods=["POST"])
         def pose():
             json_data = request.get_json()
             self.__update(json_data)
 
             return {"status": "ok"}
 
-        @self.app.route("/log", methods=["POST"])
+        @self.__app.route("/log", methods=["POST"])
         def log():
             json_data = request.get_json()
             print(json_data)
             return {"status": "ok"}
 
-        @self.app.route("/")
+        @self.__app.route("/")
         def index():
             return send_from_directory(THIS_DIR, "index.html")
 
-    def run(self):
-        self.app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context)
+    def run(self) -> None:
+        """
+        Runs the teleop server. This method is blocking.
+        """
+        self.__app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context)
