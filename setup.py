@@ -9,6 +9,8 @@ setup(
         'numpy',
         'transforms3d',
         'werkzeug',
+        'pytest',
+        'requests',
     ],
     package_data={
         'teleop': ['cert.pem', 'key.pem', 'index.html'],
