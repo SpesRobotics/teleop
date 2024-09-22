@@ -2,6 +2,7 @@ import ssl
 import os
 import math
 import logging
+from werkzeug.serving import ThreadedWSGIServer
 from typing import Callable
 from flask import Flask, send_from_directory, request
 import transforms3d as t3d
@@ -44,6 +45,7 @@ class Teleop:
         ssl_context (ssl.SSLContext, optional): The SSL context for secure communication. Defaults to None.
     """
     def __init__(self, host="0.0.0.0", port=4443, ssl_context=None):
+        self.__server = None
         self.__host = host
         self.__port = port
         self.__ssl_context = ssl_context
@@ -62,6 +64,8 @@ class Teleop:
             )
 
         self.__app = Flask(__name__)
+        log = logging.getLogger("werkzeug")
+        log.setLevel(logging.ERROR)
         self.__register_routes()
 
     def set_pose(self, pose: np.ndarray) -> None:
@@ -153,10 +157,6 @@ class Teleop:
         self.__notify_subscribers(self.__pose, message)
 
     def __register_routes(self):
-        log = logging.getLogger("werkzeug")
-        log.setLevel(logging.ERROR)
-        log.disabled = True
-
         @self.__app.route("/<path:filename>")
         def serve_file(filename):
             return send_from_directory(THIS_DIR, filename)
@@ -165,7 +165,6 @@ class Teleop:
         def pose():
             json_data = request.get_json()
             self.__update(json_data)
-
             return {"status": "ok"}
 
         @self.__app.route("/log", methods=["POST"])
@@ -182,4 +181,13 @@ class Teleop:
         """
         Runs the teleop server. This method is blocking.
         """
-        self.__app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context)
+        # self.__app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context, use_reloader=False, debug=True)
+        self.__server = ThreadedWSGIServer(app=self.__app, host=self.__host, port=self.__port, ssl_context=self.__ssl_context)
+        self.__server.serve_forever()
+
+    def stop(self) -> None:
+        """
+        Stops the teleop server.
+        """
+        self.__server.shutdown()
+

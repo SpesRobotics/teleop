@@ -8,6 +8,7 @@ setup(
         'Flask',
         'numpy',
         'transforms3d',
+        'werkzeug',
     ],
     package_data={
         'teleop': ['cert.pem', 'key.pem', 'index.html'],

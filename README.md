@@ -40,6 +40,13 @@ teleop.run()
 
 ## Development
 
+### Install
 ```bash
 pip3 install -e .
+```
+
+### Test
+
+```bash
+python3 -m pytest
 ```
