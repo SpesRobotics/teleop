@@ -44,6 +44,7 @@ class Teleop:
         port (int, optional): The port number. Defaults to 4443.
         ssl_context (ssl.SSLContext, optional): The SSL context for secure communication. Defaults to None.
     """
+
     def __init__(self, host="0.0.0.0", port=4443, ssl_context=None):
         self.__server = None
         self.__host = host
@@ -182,7 +183,12 @@ class Teleop:
         Runs the teleop server. This method is blocking.
         """
         # self.__app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context, use_reloader=False, debug=True)
-        self.__server = ThreadedWSGIServer(app=self.__app, host=self.__host, port=self.__port, ssl_context=self.__ssl_context)
+        self.__server = ThreadedWSGIServer(
+            app=self.__app,
+            host=self.__host,
+            port=self.__port,
+            ssl_context=self.__ssl_context,
+        )
         self.__server.serve_forever()
 
     def stop(self) -> None:
@@ -190,4 +196,3 @@ class Teleop:
         Stops the teleop server.
         """
         self.__server.shutdown()
-
