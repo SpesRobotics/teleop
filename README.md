@@ -1,4 +1,4 @@
-# Teleop
+![Teleop](./media/teleop.png)
 
 Turns your phone into a robot arm teleoperation device in 3 simple steps:
 1. Install and start the server on your computer.
