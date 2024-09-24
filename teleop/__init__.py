@@ -87,7 +87,7 @@ class Teleop:
         Subscribe to receive updates from the teleop module.
 
         Parameters:
-            callback (Callable[[np.ndarray, dict]]): A callback function that will be called when pose updates are received.
+            callback (Callable[[np.ndarray, dict], None]): A callback function that will be called when pose updates are received.
                 The callback function should take two arguments:
                     - np.ndarray: A 4x4 transformation matrix representing the end-effector target pose.
                     - dict: A dictionary containing additional information.

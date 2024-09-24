@@ -1,11 +1,11 @@
 name: Publish Python Package
 
 on:
-  # release:
-  #   types: [published]
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   pypi-publish:
