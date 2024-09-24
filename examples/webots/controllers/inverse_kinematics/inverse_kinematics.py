@@ -11,7 +11,6 @@ except ImportError:
         'To run this sample, please upgrade "pip" and install ikpy with this command: "pip install ikpy"'
     )
 
-import math
 from controller import Robot
 from teleop import Teleop
 
@@ -29,7 +28,7 @@ class RobotArm(Robot):
             file.write(self.getUrdf().encode("utf-8"))
         self.__arm_chain = Chain.from_urdf_file(
             filename,
-            active_links_mask=[False, True, True, True, True, True, True, False],
+            active_links_mask=[False, True, True, True, True, True, True],
             symbolic=False,
         )
 
@@ -37,37 +36,32 @@ class RobotArm(Robot):
         timestep = int(self.getBasicTimeStep())
         self.__motors = []
         for link in self.__arm_chain.links:
-            if "motor" in link.name:
+            if "joint" in link.name:
                 motor = self.getDevice(link.name)
                 motor.setVelocity(1.0)
                 position_sensor = motor.getPositionSensor()
                 position_sensor.enable(timestep)
                 self.__motors.append(motor)
 
-    def move_to_position(self, x, y, z):
+    def move_to_position(self, pose):
+        position = pose[:3, 3]
+        orientation = pose[:3, :3]
         initial_position = (
-            [0] + [m.getPositionSensor().getValue() for m in self.__motors] + [0]
+            [0] + [m.getPositionSensor().getValue() for m in self.__motors]
         )
         ik_results = self.__arm_chain.inverse_kinematics(
-            [x, y, z], max_iter=4, initial_position=initial_position
+            position, initial_position=initial_position, target_orientation=orientation, orientation_mode="all"
         )
-
-        # Recalculate the inverse kinematics of the arm if necessary.
-        position = self.__arm_chain.forward_kinematics(ik_results)
-        squared_distance = (
-            (position[0, 3] - x) ** 2
-            + (position[1, 3] - y) ** 2
-            + (position[2, 3] - z) ** 2
-        )
-        if math.sqrt(squared_distance) > 0.03:
-            ik_results = self.__arm_chain.inverse_kinematics([x, y, z])
-
         for i in range(len(self.__motors)):
             self.__motors[i].setPosition(ik_results[i + 1])
 
+    def move_joints(self, positions):
+        for i in range(len(self.__motors)):
+            self.__motors[i].setPosition(positions[i])
+
     def get_current_pose(self):
         positions = (
-            [0] + [m.getPositionSensor().getValue() for m in self.__motors] + [0]
+            [0] + [m.getPositionSensor().getValue() for m in self.__motors]
         )
         return self.__arm_chain.forward_kinematics(positions)
 
@@ -83,6 +77,11 @@ def main():
         if message["move"]:
             target_pose = pose
 
+    robot.move_joints([0, -1.0, 1.8, -2.0, -1.3, 0.4])
+    timestep = int(robot.getBasicTimeStep())
+    for _ in range(100):
+        robot.step(timestep) != -1
+
     current_pose = robot.get_current_pose()
     teleop.set_pose(current_pose)
 
@@ -90,15 +89,11 @@ def main():
     thread = threading.Thread(target=teleop.run)
     thread.start()
 
-    timestep = int(4 * robot.getBasicTimeStep())
     while robot.step(timestep) != -1:
-        print(target_pose)
         if target_pose is not None:
-            x = target_pose[0, 3]
-            y = target_pose[1, 3]
-            z = target_pose[2, 3]
-            robot.move_to_position(x, y, z)
+            robot.move_to_position(target_pose)
 
+    teleop.stop()
     thread.join()
 
 

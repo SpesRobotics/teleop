@@ -1,0 +1,30 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/universal_robots/protos/UR5e.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/tables/protos/Table.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/appearances/protos/CementTiles.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.31037300198260087 0.1465067848507595 0.9392573457966681 2.306961737952525
+  position 1.896552590226523 -2.044379948583023 2.6528044478599417
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+Floor {
+  size 4 4
+  appearance CementTiles {
+  }
+}
+UR5e {
+  translation -0.38 0 0.74
+  controller "inverse_kinematics"
+}
+Table {
+}
