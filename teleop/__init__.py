@@ -46,6 +46,10 @@ class Teleop:
     """
 
     def __init__(self, host="0.0.0.0", port=4443, ssl_context=None):
+        self.__logger = logging.getLogger("teleop")
+        self.__logger.setLevel(logging.INFO)
+        self.__logger.addHandler(logging.StreamHandler())
+
         self.__server = None
         self.__host = host
         self.__port = port
@@ -132,7 +136,7 @@ class Teleop:
                 lin_tol=6e-2,
                 ang_tol=math.radians(25),
             ):
-                print("Pose jump is detected, resetting the pose")
+                self.__logger.warning("Pose jump detected, resetting the pose")
                 self.__relative_pose_init = None
                 self.__previous_received_pose = received_pose
                 return
@@ -160,29 +164,32 @@ class Teleop:
     def __register_routes(self):
         @self.__app.route("/<path:filename>")
         def serve_file(filename):
+            self.__logger.debug(f"Serving the {filename} file")
             return send_from_directory(THIS_DIR, filename)
 
         @self.__app.route("/pose", methods=["POST"])
         def pose():
             json_data = request.get_json()
+            self.__logger.debug(f"Received a pose update request: {json_data}")
             self.__update(json_data)
             return {"status": "ok"}
 
         @self.__app.route("/log", methods=["POST"])
         def log():
             json_data = request.get_json()
-            print(json_data)
+            self.__logger.info(f"Received a log message: {json_data}")
             return {"status": "ok"}
 
         @self.__app.route("/")
         def index():
+            self.__logger.debug("Serving the index.html file")
             return send_from_directory(THIS_DIR, "index.html")
 
     def run(self) -> None:
         """
         Runs the teleop server. This method is blocking.
         """
-        # self.__app.run(host=self.__host, port=self.__port, ssl_context=self.__ssl_context, use_reloader=False, debug=True)
+        self.__logger.info(f"Server started at https://{self.__host}:{self.__port}")
         self.__server = ThreadedWSGIServer(
             app=self.__app,
             host=self.__host,

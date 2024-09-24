@@ -6,17 +6,17 @@ from setuptools import setup
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-# replace relative links with absolute links
-long_description = re.sub(
-    r"\]\((?!http)([^)]+)\)",
-    r"](https://github.com/SpesRobotics/teleop/raw/main/\1)",
-    long_description,
-)
+# Replace relative links with absolute links
+for match in re.findall(r"\]\((?!http)([^)]+)\)", long_description):
+    filepath = Path(match)
+    long_description = long_description.replace(
+        match, f"https://github.com/SpesRobotics/teleop/raw/main/{filepath}"
+    )
 
 
 setup(
     name="teleop",
-    version="0.0.3",
+    version="0.0.4",
     packages=["teleop", "teleop.basic", "teleop.ros2"],
     long_description=long_description,
     long_description_content_type="text/markdown",

@@ -41,22 +41,30 @@ def ros2numpy(pose):
 
 
 def main():
-    rclpy.init()
-
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--omit-current-pose", action="store_true", help="Omit usage of current pose"
+    )
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host address")
     parser.add_argument("--port", type=int, default=4443, help="Port number")
     parser.add_argument(
-        "--topic", type=str, default="target_frame", help="Topic for pose publishing"
+        "--ros-args",
+        nargs=argparse.REMAINDER,
+        help="Arguments to pass to ROS",
     )
 
     args = parser.parse_args()
 
+    rclpy.init(args=["--ros-args"] + args.ros_args)
+
     teleop = Teleop(host=args.host, port=args.port)
     current_robot_pose_message = None
+    if args.omit_current_pose:
+        current_robot_pose_message = PoseStamped()
+        current_robot_pose_message.pose.orientation.w = 1
     pose_initiated = False
     node = rclpy.create_node("ros2_teleop")
-    pose_publisher = node.create_publisher(PoseStamped, args.topic, 1)
+    pose_publisher = node.create_publisher(PoseStamped, "target_frame", 1)
     broadcaster = TransformBroadcaster(node)
 
     def ros_current_pose_callback(msg):
@@ -115,7 +123,6 @@ def main():
         PoseStamped, "/current_pose", ros_current_pose_callback, 1
     )
 
-    print(f"Server start on the adress https://{args.host}:{args.port}")
     teleop.subscribe(teleop_pose_callback)
     teleop.run()
 
