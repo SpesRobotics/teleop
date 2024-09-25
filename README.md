@@ -11,7 +11,7 @@ The web application utilizes the WebXR API that fuses the phone's sensors to get
 
 | ![Lite6 Physical Teleoperation](./media/lite6_physical_teleop.gif)  | ![UR5e Webots Teleoperation](./media/ur5e_webots.gif) |
 |:-------------------------------------------------------------------:|:----------------------------------------------------:|
-| Teleoperation of a Physical Lite6 robot                             | Teleoperation of a Webots simulated UR5e robot       |
+| Teleoperation of a physical Lite6 robot                             | Teleoperation of a Webots simulated UR5e robot       |
 
 ## Installation
 
