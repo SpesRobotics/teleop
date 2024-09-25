@@ -28,7 +28,7 @@ class RobotArm(Robot):
             file.write(self.getUrdf().encode("utf-8"))
         self.__arm_chain = Chain.from_urdf_file(
             filename,
-            active_links_mask=[False, True, True, True, True, True, True],
+            active_links_mask=[False, True, True, True, True, True, True, False],
             symbolic=False,
         )
 
@@ -36,7 +36,7 @@ class RobotArm(Robot):
         timestep = int(self.getBasicTimeStep())
         self.__motors = []
         for link in self.__arm_chain.links:
-            if "joint" in link.name:
+            if "joint" in link.name and "pen" not in link.name:
                 motor = self.getDevice(link.name)
                 motor.setVelocity(1.0)
                 position_sensor = motor.getPositionSensor()
@@ -47,7 +47,7 @@ class RobotArm(Robot):
         position = pose[:3, 3]
         orientation = pose[:3, :3]
         initial_position = (
-            [0] + [m.getPositionSensor().getValue() for m in self.__motors]
+            [0] + [m.getPositionSensor().getValue() for m in self.__motors] + [0]
         )
         ik_results = self.__arm_chain.inverse_kinematics(
             position, initial_position=initial_position, target_orientation=orientation, orientation_mode="all"
@@ -61,7 +61,7 @@ class RobotArm(Robot):
 
     def get_current_pose(self):
         positions = (
-            [0] + [m.getPositionSensor().getValue() for m in self.__motors]
+            [0] + [m.getPositionSensor().getValue() for m in self.__motors] + [0]
         )
         return self.__arm_chain.forward_kinematics(positions)
 

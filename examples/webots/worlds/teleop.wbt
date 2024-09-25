@@ -10,8 +10,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.31037300198260087 0.1465067848507595 0.9392573457966681 2.306961737952525
-  position 1.896552590226523 -2.044379948583023 2.6528044478599417
+  orientation 0.12086428145072244 0.9228327289041858 -0.36574797324476627 0.6877052442483729
+  position -3.786446404350725 0.6476614141100792 3.698119483761888
 }
 TexturedBackground {
 }
@@ -25,6 +25,23 @@ Floor {
 UR5e {
   translation -0.38 0 0.74
   controller "inverse_kinematics"
+  toolSlot [
+    Pen {
+      rotation 0.5773482691863839 0.5773522691882489 -0.5773502691873165 2.09439
+      children [
+        Shape {
+          appearance PBRAppearance {
+          }
+          geometry Cylinder {
+            height 0.2
+            radius 0.005
+          }
+        }
+      ]
+      leadSize 0.006
+      maxDistance 0.1
+    }
+  ]
 }
 Table {
 }

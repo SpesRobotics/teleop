@@ -16,7 +16,7 @@ for match in re.findall(r"\]\((?!http)([^)]+)\)", long_description):
 
 setup(
     name="teleop",
-    version="0.0.4",
+    version="0.0.5",
     packages=["teleop", "teleop.basic", "teleop.ros2"],
     long_description=long_description,
     long_description_content_type="text/markdown",

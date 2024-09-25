@@ -11,7 +11,7 @@ The web application utilizes the WebXR API that fuses the phone's sensors to get
 
 ## Installation
 
-The package is available on PyPI, you can install it using pip.
+The package is available on [PyPI](https://pypi.org/project/teleop/), you can install it using pip.
 
 ```bash
 pip3 install teleop
@@ -19,7 +19,7 @@ pip3 install teleop
 
 ## Usage
 
-Out of the box, we provide some robot arm interfaces that you can just run, but you can create you own interface by including the `teleop.Teleop` class in your project.
+Out of the box, we provide some robot arm interfaces that you can just run, but you can create you own interface by including the [`teleop.Teleop`](./teleop/__init__.py) class in your project.
 
 ### Basic Interface
 
@@ -32,7 +32,7 @@ python3 -m teleop.basic
 
 ### ROS 2 Interface
 
-A ROS 2 interface is primarily designed to be compatible with the [cartesian_controllers](https://github.com/fzi-forschungszentrum-informatik/cartesian_controllers) package, but it could also be adapted for [MoveIt](https://moveit.ai/) or other packages.
+A ROS 2 interface is primarily designed to be compatible with the [cartesian_controllers](https://github.com/fzi-forschungszentrum-informatik/cartesian_controllers) package, but it could also be adapted for [MoveIt Servo](https://moveit.picknik.ai/main/doc/examples/realtime_servo/realtime_servo_tutorial.html) or other packages.
 
 ```bash
 python3 -m teleop.ros2
@@ -76,6 +76,11 @@ teleop = Teleop()
 teleop.subscribe(callback)
 teleop.run()
 ```
+
+## Examples
+
+Check out the examples to see how to use the package in different scenarios:
+- [examples/webots](./examples/webots): A teleoperation example of a UR5e robot arm with [ikpy](https://github.com/Phylliade/ikpy) in a [Webots](https://github.com/cyberbotics/webots/) simulator.
 
 ## Development
 
