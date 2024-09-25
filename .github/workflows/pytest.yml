@@ -15,13 +15,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            python-version: '3.7'
+            python-version: '3.6.15'
           - os: ubuntu-latest
-            python-version: '3.10'
+            python-version: '3.10.15'
           - os: ubuntu-latest
-            python-version: '3.12'
-          - os: macos-latest
             python-version: '3.12.6'
+          # - os: macos-latest
+          #   python-version: '3.12.6'
           - os: windows-latest
             python-version: '3.12.6'
 
