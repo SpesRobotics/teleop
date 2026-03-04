@@ -147,6 +147,7 @@ class Teleop:
     Args:
         host (str, optional): The host IP address. Defaults to "0.0.0.0".
         port (int, optional): The port number. Defaults to 4443.
+        frontend_dir (str, optional): The directory containing the frontend assets. Defaults to THIS_DIR.
     """
 
     def __init__(
@@ -155,6 +156,7 @@ class Teleop:
         port=4443,
         natural_phone_orientation_euler=None,
         natural_phone_position=None,
+        frontend_dir=None,
     ):
         self.__logger = logging.getLogger("teleop")
         self.__logger.setLevel(logging.INFO)
@@ -178,6 +180,10 @@ class Teleop:
             t3d.euler.euler2mat(*natural_phone_orientation_euler),
             [1, 1, 1],
         )
+
+        if frontend_dir is None:
+            frontend_dir = THIS_DIR
+        self.__frontend_dir = frontend_dir
 
         self.__app = FastAPI()
         self.__manager = ConnectionManager()
@@ -280,13 +286,13 @@ class Teleop:
 
     def __setup_routes(self):
         # Mount static files directory
-        assets_dir = os.path.join(THIS_DIR, "assets")
+        assets_dir = os.path.join(self.__frontend_dir, "assets")
         self.__app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
         @self.__app.get("/")
         async def index():
             self.__logger.debug("Serving the index.html file")
-            return FileResponse(os.path.join(THIS_DIR, "index.html"))
+            return FileResponse(os.path.join(self.__frontend_dir, "index.html"))
 
         @self.__app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
