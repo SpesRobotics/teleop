@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "teleop"
-version = "0.1.4"
+version = "0.1.5"
 description = "Turns your phone into a robot arm teleoperation device by leveraging the WebXR API"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
