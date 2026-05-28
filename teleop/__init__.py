@@ -4,7 +4,7 @@ import socket
 import logging
 from typing import Callable, List
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import transforms3d as t3d
@@ -191,6 +191,9 @@ class Teleop:
         # Configure logging
         logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
         self.__setup_routes()
+
+    def include_router(self, router: APIRouter, **kwargs) -> None:
+        self.__app.include_router(router, **kwargs)
 
     def set_pose(self, pose: np.ndarray) -> None:
         """
