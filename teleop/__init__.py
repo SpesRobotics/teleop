@@ -157,6 +157,7 @@ class Teleop:
         natural_phone_orientation_euler=None,
         natural_phone_position=None,
         frontend_dir=None,
+        offset_user_orientation=0,
     ):
         self.__logger = logging.getLogger("teleop")
         self.__logger.setLevel(logging.INFO)
@@ -180,6 +181,7 @@ class Teleop:
             t3d.euler.euler2mat(*natural_phone_orientation_euler),
             [1, 1, 1],
         )
+        self.__offset_user_orientation = t3d.affines.compose([0, 0, 0], t3d.euler.euler2mat(0, 0, offset_user_orientation), [1, 1, 1])
 
         if frontend_dir is None:
             frontend_dir = THIS_DIR
@@ -244,7 +246,7 @@ class Teleop:
         received_pose[:3, :3] = received_pose[:3, :3] @ np.linalg.inv(
             TF_RUB2FLU[:3, :3]
         )
-        received_pose = received_pose @ self.__natural_phone_pose
+        received_pose = self.__offset_user_orientation @ received_pose @ self.__natural_phone_pose
 
         # Pose jump protection
         if self.__previous_received_pose is not None:
