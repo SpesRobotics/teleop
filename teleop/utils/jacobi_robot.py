@@ -92,6 +92,10 @@ class JacobiRobot:
         self.eps = 1e-4
         self.max_iter = 100
         self.damping = 1e-4  # Increased damping for stability
+        self.regularization_enabled = False
+        self.joint_regularization = 0.0
+        self.velocity_regularization = 0.0
+        self.desired_joint_config = self.q.copy()
 
         # Previous velocities for acceleration limiting
         self.prev_linear_vel = np.zeros(3)
@@ -148,11 +152,8 @@ class JacobiRobot:
         J = self.__compute_jacobian()
         # Create desired spatial velocity vector
         desired_spatial_vel = np.concatenate([linear_velocity, angular_velocity_rpy])
-        # Use SVD for more stable pseudo-inverse
-        U, s, Vt = np.linalg.svd(J, full_matrices=False)
-        s_inv = np.where(s > 1e-6, 1.0 / s, 0.0)  # Threshold small singular values
-        J_pinv = Vt.T @ np.diag(s_inv) @ U.T
-        joint_velocities = J_pinv @ desired_spatial_vel
+        J_pinv, joint_bias = self.__compute_regularized_jacobian_pinv(J)
+        joint_velocities = J_pinv @ desired_spatial_vel + joint_bias
         # Apply joint velocity limits
         for i in range(len(joint_velocities)):
             if i < len(self.dq_max) and self.dq_max[i] > 0:
@@ -280,12 +281,8 @@ class JacobiRobot:
         # Compute joint velocities using damped pseudo-inverse
         J = self.__compute_jacobian()
 
-        # Use SVD for more stable pseudo-inverse
-        U, s, Vt = np.linalg.svd(J, full_matrices=False)
-        s_inv = np.where(s > 1e-6, 1.0 / s, 0.0)  # Threshold small singular values
-        J_pinv = Vt.T @ np.diag(s_inv) @ U.T
-
-        joint_velocities = J_pinv @ desired_spatial_vel
+        J_pinv, joint_bias = self.__compute_regularized_jacobian_pinv(J)
+        joint_velocities = J_pinv @ desired_spatial_vel + joint_bias
 
         # Apply joint velocity limits
         for i in range(len(joint_velocities)):
@@ -471,6 +468,67 @@ class JacobiRobot:
         if joint_index < 0 or joint_index >= self.model.njoints:
             raise ValueError(f"Joint '{joint_name}' not found in model.")
         return self.dq[joint_index]
+
+    def __compute_regularized_jacobian_pinv(
+        self, J: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute the original or opt-in regularized Jacobian pseudoinverse."""
+        U, singular_values, Vt = np.linalg.svd(J, full_matrices=False)
+
+        if not self.regularization_enabled:
+            singular_inverse = np.where(
+                singular_values > 1e-6,
+                1.0 / singular_values,
+                0.0,
+            )
+            J_pinv = Vt.T @ np.diag(singular_inverse) @ U.T
+            return J_pinv, np.zeros(J.shape[1])
+
+        denominator = (
+            singular_values**2
+            + self.damping**2
+            + self.velocity_regularization
+        )
+        regularized_inverse = singular_values / denominator
+        J_pinv = Vt.T @ np.diag(regularized_inverse) @ U.T
+
+        nullspace = np.eye(J.shape[1]) - J_pinv @ J
+        joint_error = self.desired_joint_config - self.q
+        joint_bias = nullspace @ (self.joint_regularization * joint_error)
+        return J_pinv, joint_bias
+
+    def set_regularization_params(
+        self,
+        joint_regularization: float = None,
+        velocity_regularization: float = None,
+        damping: float = None,
+        desired_joint_config: np.ndarray = None,
+    ):
+        """Enable and configure IK damping and joint-continuity regularization."""
+        for name, value in (
+            ("joint_regularization", joint_regularization),
+            ("velocity_regularization", velocity_regularization),
+            ("damping", damping),
+        ):
+            if value is not None:
+                if value < 0:
+                    raise ValueError(f"{name} must be non-negative")
+                setattr(self, name, float(value))
+
+        if desired_joint_config is not None:
+            desired_joint_config = np.asarray(desired_joint_config, dtype=float)
+            if desired_joint_config.shape != self.q.shape:
+                raise ValueError(
+                    f"desired_joint_config must have shape {self.q.shape}, "
+                    f"got {desired_joint_config.shape}"
+                )
+            self.desired_joint_config = desired_joint_config.copy()
+
+        self.regularization_enabled = True
+
+    def disable_regularization(self):
+        """Restore the original SVD pseudoinverse behavior for this instance."""
+        self.regularization_enabled = False
 
 
 if __name__ == "__main__":
