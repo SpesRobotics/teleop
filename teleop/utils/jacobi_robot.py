@@ -1,6 +1,7 @@
 import numpy as np
 import pinocchio as pin
 import matplotlib.pyplot as plt
+import ruckig
 from typing import List, Tuple
 
 
@@ -48,6 +49,8 @@ class JacobiRobot:
         min_angular_vel: float = 0.1,
         linear_gain: float = 20.0,
         angular_gain: float = 12.0,
+        max_joint_acc: float = 10.0,
+        max_joint_jerk: float = 100.0,
     ):
         """
         Initialize the Pinocchio robot with servo control capabilities.
@@ -67,6 +70,7 @@ class JacobiRobot:
         # Robot state
         self.q = pin.neutral(self.model)  # Joint positions
         self.dq = np.zeros(self.model.nv)  # Joint velocities
+        self.ddq = np.zeros(self.model.nv)  # Joint accelerations
 
         # Joint limits
         self.q_min = self.model.lowerPositionLimit
@@ -79,6 +83,8 @@ class JacobiRobot:
         self.max_linear_acc = max_linear_acc
         self.max_angular_acc = max_angular_acc
         self.max_joint_vel = max_joint_vel
+        self.max_joint_acc = max_joint_acc
+        self.max_joint_jerk = max_joint_jerk
         self.min_linear_vel = min_linear_vel
         self.min_angular_vel = min_angular_vel
         self.linear_gain = linear_gain
@@ -324,10 +330,95 @@ class JacobiRobot:
         reached = position_error < linear_tol and orientation_error < angular_tol
         return reached
 
+    def servo_to_joint_positions(
+        self,
+        target_joint_positions,
+        dt: float = 0.01,
+        joint_tol: float = 1e-4,
+        max_joint_vel: float = None,
+        max_joint_acc: float = None,
+        max_joint_jerk: float = None,
+    ) -> bool:
+        """
+        Move one jerk-limited Ruckig step toward target joint positions.
+
+        Args:
+            target_joint_positions: Dict of joint names to positions, or a vector
+                ordered like ``self.q``.
+            dt: Time step for online trajectory generation.
+            joint_tol: Joint-space convergence tolerance.
+            max_joint_vel: Optional per-joint velocity cap. Defaults to the robot's
+                configured ``max_joint_vel``.
+            max_joint_acc: Optional per-joint acceleration cap. Defaults to the
+                robot's configured ``max_joint_acc``.
+            max_joint_jerk: Optional per-joint jerk cap. Defaults to the robot's
+                configured ``max_joint_jerk``.
+
+        Returns:
+            bool: True if the target joint positions are reached after this step.
+        """
+        if dt <= 0:
+            raise ValueError("dt must be greater than zero.")
+        if joint_tol < 0:
+            raise ValueError("joint_tol must be non-negative.")
+
+        target_q = self.__target_joint_positions_to_vector(target_joint_positions)
+
+        velocity_cap = self.max_joint_vel if max_joint_vel is None else max_joint_vel
+        if velocity_cap <= 0:
+            raise ValueError("max_joint_vel must be greater than zero.")
+
+        acceleration_cap = (
+            self.max_joint_acc if max_joint_acc is None else max_joint_acc
+        )
+        if acceleration_cap <= 0:
+            raise ValueError("max_joint_acc must be greater than zero.")
+
+        jerk_cap = self.max_joint_jerk if max_joint_jerk is None else max_joint_jerk
+        if jerk_cap <= 0:
+            raise ValueError("max_joint_jerk must be greater than zero.")
+
+        self.__validate_joint_position_limits(target_q, joint_tol)
+
+        max_velocity = self.__joint_velocity_limits(velocity_cap)
+        dofs = len(self.q)
+        otg = ruckig.Ruckig(dofs, dt)
+        ruckig_input = ruckig.InputParameter(dofs)
+        ruckig_output = ruckig.OutputParameter(dofs)
+
+        ruckig_input.current_position = self.q.tolist()
+        ruckig_input.current_velocity = self.dq.tolist()
+        ruckig_input.current_acceleration = self.ddq.tolist()
+        ruckig_input.target_position = target_q.tolist()
+        ruckig_input.target_velocity = np.zeros(dofs).tolist()
+        ruckig_input.target_acceleration = np.zeros(dofs).tolist()
+        ruckig_input.max_velocity = max_velocity.tolist()
+        ruckig_input.max_acceleration = np.full(dofs, acceleration_cap).tolist()
+        ruckig_input.max_jerk = np.full(dofs, jerk_cap).tolist()
+
+        try:
+            result = otg.update(ruckig_input, ruckig_output)
+        except Exception as error:
+            raise ValueError("Failed to calculate Ruckig joint trajectory.") from error
+
+        if result not in (ruckig.Result.Working, ruckig.Result.Finished):
+            raise ValueError(f"Ruckig failed to calculate joint trajectory: {result}")
+
+        self.q = np.asarray(ruckig_output.new_position, dtype=float)
+        self.dq = np.asarray(ruckig_output.new_velocity, dtype=float)
+        self.ddq = np.asarray(ruckig_output.new_acceleration, dtype=float)
+
+        remaining_error = target_q - self.q
+        return bool(np.all(np.abs(remaining_error) <= joint_tol))
+
     def update_state(self, joint_velocities: np.ndarray, dt: float = 0.01):
         """Update robot state with given joint velocities."""
+        previous_dq = self.dq.copy()
+
         # Store velocities
         self.dq = joint_velocities.copy()
+        if dt > 0:
+            self.ddq = (self.dq - previous_dq) / dt
 
         # Integrate to get new joint positions
         self.q = self.q + self.dq * dt
@@ -463,7 +554,6 @@ class JacobiRobot:
         joint_index = self.__get_joint_index(joint_name)
         if joint_index < 0 or joint_index >= self.model.njoints:
             raise ValueError(f"Joint '{joint_name}' not found in model.")
-        print(f"Setting joint '{joint_name}' to position {position:.3f}")
         self.q[joint_index] = position
 
     def get_joint_names(self) -> List[str]:
@@ -481,6 +571,51 @@ class JacobiRobot:
         if joint_index < 0 or joint_index >= self.model.njoints:
             raise ValueError(f"Joint '{joint_name}' not found in model.")
         return self.dq[joint_index]
+
+    def __target_joint_positions_to_vector(self, target_joint_positions) -> np.ndarray:
+        if isinstance(target_joint_positions, dict):
+            target_q = self.q.copy()
+            for joint_name, position in target_joint_positions.items():
+                joint_index = self.__get_joint_index(joint_name)
+                if joint_index < 0 or joint_index >= self.model.nq:
+                    raise ValueError(f"Joint '{joint_name}' not found in model.")
+                target_q[joint_index] = position
+        else:
+            target_q = np.asarray(target_joint_positions, dtype=float)
+            if target_q.shape != self.q.shape:
+                raise ValueError(
+                    "target_joint_positions must have shape "
+                    f"{self.q.shape}, got {target_q.shape}"
+                )
+
+        if not np.all(np.isfinite(target_q)):
+            raise ValueError("target_joint_positions must be finite.")
+
+        return target_q
+
+    def __joint_velocity_limits(self, velocity_cap: float) -> np.ndarray:
+        max_velocity = np.full(len(self.q), velocity_cap, dtype=float)
+        for i in range(len(max_velocity)):
+            if i < len(self.dq_max) and self.dq_max[i] > 0:
+                max_velocity[i] = min(max_velocity[i], self.dq_max[i])
+        return max_velocity
+
+    def __validate_joint_position_limits(
+        self, target_q: np.ndarray, joint_tol: float
+    ) -> None:
+        lower_limit_mask = np.isfinite(self.q_min)
+        below_limits = (
+            target_q[lower_limit_mask] < self.q_min[lower_limit_mask] - joint_tol
+        )
+        if np.any(below_limits):
+            raise ValueError("target_joint_positions are below the robot joint limits.")
+
+        upper_limit_mask = np.isfinite(self.q_max)
+        above_limits = (
+            target_q[upper_limit_mask] > self.q_max[upper_limit_mask] + joint_tol
+        )
+        if np.any(above_limits):
+            raise ValueError("target_joint_positions are above the robot joint limits.")
 
     def __compute_regularized_jacobian_pinv(self, J: np.ndarray) -> np.ndarray:
         """

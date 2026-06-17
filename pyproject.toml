@@ -25,7 +25,7 @@ Source = "https://github.com/SpesRobotics/teleop"
 Tracker = "https://github.com/SpesRobotics/teleop/issues"
 
 [project.optional-dependencies]
-utils = ["pin"]
+utils = ["pin", "ruckig"]
 
 [tool.setuptools.packages.find]
 include = ["teleop*"]
