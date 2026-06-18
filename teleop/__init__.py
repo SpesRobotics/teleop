@@ -158,6 +158,7 @@ class Teleop:
         natural_phone_position=None,
         frontend_dir=None,
         offset_user_orientation=0,
+        current_pose_provider=None,
     ):
         self.__logger = logging.getLogger("teleop")
         self.__logger.setLevel(logging.INFO)
@@ -171,6 +172,8 @@ class Teleop:
         self.__previous_received_pose = None
         self.__callbacks = []
         self.__pose = np.eye(4)
+        self.__previous_move = False
+        self.__current_pose_provider = current_pose_provider
 
         if natural_phone_orientation_euler is None:
             natural_phone_orientation_euler = [0, math.radians(-45), 0]
@@ -227,6 +230,9 @@ class Teleop:
         position = message["position"]
         orientation = message["orientation"]
         scale = message.get("scale", 1.0)
+        #Detect rising edge of move signal
+        move_started = move and not self.__previous_move
+        self.__previous_move = move
 
         position = np.array([position["x"], position["y"], position["z"]])
         quat = np.array(
@@ -238,7 +244,13 @@ class Teleop:
             self.__absolute_pose_init = None
             self.__notify_subscribers(self.__pose, message)
             return
-
+        if move_started and self.__current_pose_provider is not None: # Rising edge
+            try:
+                current_pose = self.__current_pose_provider()
+                self.__pose = np.array(current_pose, dtype=float, copy=True)
+            except Exception:
+                self.__logger.warning("Failed to get current pose, using last known pose")  
+        
         received_pose_rub = t3d.affines.compose(
             position, t3d.quaternions.quat2mat(quat), [1, 1, 1]
         )
