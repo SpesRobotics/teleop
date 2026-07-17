@@ -7,7 +7,7 @@ Transform your phone into a robot arm teleoperation device in three simple steps
 3. Tap `Start`, then press and hold the `Move` button to control the robot arm.
 
 > [!IMPORTANT]  
-> Your phone has to support the [WebXR API](https://developer.mozilla.org/en-US/docs/Web/API/WebXR_Device_API). Unfortunately, the iPhone doesn't support the WebXR API.
+> Your phone has to support the [WebXR API](https://developer.mozilla.org/en-US/docs/Web/API/WebXR_Device_API). To use `teleop` on an iPhone, install and open either [XR Browser](https://apps.apple.com/app/xr-browser/id1588029989) or [WebXR Viewer](https://apps.apple.com/app/webxr-viewer/id1295998056), then navigate to `<server-hostname>:5000` to open the teleoperation web app. Safari on iPhone doesn't support WebXR.
 
 The web application leverages the WebXR API, which combines your phone’s sensors to detect its orientation and position in 3D space. The server receives this data and sends it to the robot arm controller.
 
