@@ -25,10 +25,13 @@ class JacobiRobotROS(JacobiRobot):
         max_linear_acc: float = 3.0,
         max_angular_acc: float = 6.0,
         max_joint_vel: float = 5.0,
+        max_joint_acc: float = 10.0,
+        max_joint_jerk: float = 100.0,
         min_linear_vel: float = 0.03,
         min_angular_vel: float = 0.1,
         linear_gain: float = 5.0,
         angular_gain: float = 1.0,
+
     ):
         """
         Initialize ROS 2-enabled Jacobian robot.
@@ -50,6 +53,8 @@ class JacobiRobotROS(JacobiRobot):
             min_angular_vel: Minimum angular velocity
             linear_gain: Linear gain for control
             angular_gain: Angular gain for control
+            max_joint_acc: Maximum joint acceleration
+            max_joint_jerk: Maximum joint jerk
         """
 
         self.node = node
@@ -68,6 +73,8 @@ class JacobiRobotROS(JacobiRobot):
             min_angular_vel,
             linear_gain,
             angular_gain,
+            max_joint_acc,
+            max_joint_jerk,
         )
 
         self.joint_states_received = False
@@ -201,6 +208,27 @@ class JacobiRobotROS(JacobiRobot):
                 "Failed to compute joint positions for target pose"
             )
             return False
+
+        self.__send_joint_trajectory_topic(duration=dt)
+        return reached
+
+    def servo_to_joint_positions(
+        self,
+        target_joint_positions,
+        dt: float = 0.1,
+        joint_tol: float = 1e-4,
+        max_joint_vel: float = None,
+        max_joint_acc: float = None,
+        max_joint_jerk: float = None,
+    ) -> bool:
+        reached = super().servo_to_joint_positions(
+            target_joint_positions,
+            dt=dt,
+            joint_tol=joint_tol,
+            max_joint_vel=max_joint_vel,
+            max_joint_acc=max_joint_acc,
+            max_joint_jerk=max_joint_jerk,
+        )
 
         self.__send_joint_trajectory_topic(duration=dt)
         return reached
