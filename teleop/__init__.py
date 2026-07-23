@@ -166,6 +166,8 @@ class Teleop:
         frontend_dir=None,
         offset_user_orientation=0,
         current_pose_provider=None,
+        pose_jump_linear_tolerance=0.05,
+        pose_jump_angular_tolerance=math.radians(35),
     ):
         self.__logger = logging.getLogger("teleop")
         self.__logger.setLevel(logging.INFO)
@@ -181,6 +183,8 @@ class Teleop:
         self.__pose = np.eye(4)
         self.__previous_move = False
         self.__current_pose_provider = current_pose_provider
+        self.__pose_jump_linear_tolerance = pose_jump_linear_tolerance
+        self.__pose_jump_angular_tolerance = pose_jump_angular_tolerance
 
         if natural_phone_orientation_euler is None:
             natural_phone_orientation_euler = [0, math.radians(-45), 0]
@@ -313,8 +317,8 @@ class Teleop:
             if not are_close(
                 received_pose,
                 self.__previous_received_pose,
-                lin_tol=0.05,
-                ang_tol=math.radians(35),
+                lin_tol=self.__pose_jump_linear_tolerance,
+                ang_tol=self.__pose_jump_angular_tolerance,
             ):
                 self.__logger.warning("Pose jump detected, resetting the pose")
                 self.__relative_pose_init = None
