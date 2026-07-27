@@ -10,21 +10,31 @@ from fastapi.staticfiles import StaticFiles
 import transforms3d as t3d
 import numpy as np
 import json
+import subprocess
 
 TF_RUB2FLU = np.array([[0, 0, -1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
 THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_local_ip():
+def get_local_ip() -> str:
+    # Try connecting to an external address first (requires default route / gateway)
     try:
-        # Connect to an external address (doesn't actually send data)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))  # Google DNS as a dummy target
+        # Doesn't actually send data, but forces OS to choose an interface with a route
+        s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
         s.close()
         return local_ip
-    except Exception as e:
-        return f"Error: {e}"
+    except Exception:
+        pass
+
+    # Offline/hotspot fallback using 'hostname -I' (Linux-only)
+    try:
+        ips = subprocess.check_output(["hostname", "-I"]).decode().strip().split()
+        return ips[0] if ips else "127.0.0.1"
+    except Exception:
+        return "127.0.0.1"
+
 
 
 def are_close(a, b=None, lin_tol=1e-9, ang_tol=1e-9):
