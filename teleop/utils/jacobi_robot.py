@@ -2,7 +2,7 @@ import numpy as np
 import pinocchio as pin
 import matplotlib.pyplot as plt
 import ruckig
-from typing import List, Tuple
+from typing import List
 
 
 def se3_to_matrix(se3_obj: pin.SE3) -> np.ndarray:
@@ -40,13 +40,7 @@ class JacobiRobot:
         self,
         urdf_path: str,
         ee_link: str = "end_effector",
-        max_linear_vel: float = 0.8,
-        max_angular_vel: float = 3.0,
-        max_linear_acc: float = 6.0,
-        max_angular_acc: float = 8.0,
         max_joint_vel: float = 5.0,
-        min_linear_vel: float = 0.03,
-        min_angular_vel: float = 0.1,
         linear_gain: float = 20.0,
         angular_gain: float = 12.0,
         max_joint_acc: float = 10.0,
@@ -78,22 +72,13 @@ class JacobiRobot:
         self.dq_max = self.model.velocityLimit
 
         # Servo control parameters
-        self.max_linear_vel = max_linear_vel
-        self.max_angular_vel = max_angular_vel
-        self.max_linear_acc = max_linear_acc
-        self.max_angular_acc = max_angular_acc
         self.max_joint_vel = max_joint_vel
         self.max_joint_acc = max_joint_acc
         self.max_joint_jerk = max_joint_jerk
-        self.min_linear_vel = min_linear_vel
-        self.min_angular_vel = min_angular_vel
         self.linear_gain = linear_gain
         self.angular_gain = angular_gain
 
         # Control gains - REDUCED for stability
-        self.kp_pos = 1.0  # Position gain (reduced from 5.0)
-        self.kp_ori = 0.5  # Orientation gain (reduced from 3.0)
-        self.kd = 0.05  # Damping gain
         self.damping = 1e-4  # Increased damping for stability
 
         # IK regularization parameters
@@ -219,66 +204,9 @@ class JacobiRobot:
         linear_error = error_vector[:3]
         angular_error = error_vector[3:]
 
-        # Compute error magnitudes
-        linear_error_norm = np.linalg.norm(linear_error)
-        angular_error_norm = np.linalg.norm(angular_error)
-
         # Desired twist with adaptive proportional control
-        desired_linear_vel = self.kp_pos * self.linear_gain * linear_error
-        desired_angular_vel = self.kp_ori * self.angular_gain * angular_error
-
-        # Add minimum velocity to prevent stalling near target
-        if linear_error_norm > linear_tol:
-            linear_vel_norm = np.linalg.norm(desired_linear_vel)
-            if linear_vel_norm > 0 and linear_vel_norm < self.min_linear_vel:
-                desired_linear_vel = desired_linear_vel * (
-                    self.min_linear_vel / linear_vel_norm
-                )
-
-        if angular_error_norm > angular_tol:
-            angular_vel_norm = np.linalg.norm(desired_angular_vel)
-            if angular_vel_norm > 0 and angular_vel_norm < self.min_angular_vel:
-                desired_angular_vel = desired_angular_vel * (
-                    self.min_angular_vel / angular_vel_norm
-                )
-
-        # Apply velocity limits
-        linear_vel_norm = np.linalg.norm(desired_linear_vel)
-        if linear_vel_norm > self.max_linear_vel:
-            desired_linear_vel = desired_linear_vel * (
-                self.max_linear_vel / linear_vel_norm
-            )
-
-        angular_vel_norm = np.linalg.norm(desired_angular_vel)
-        if angular_vel_norm > self.max_angular_vel:
-            desired_angular_vel = desired_angular_vel * (
-                self.max_angular_vel / angular_vel_norm
-            )
-
-        # More relaxed acceleration limits near target
-        accel_factor = 1.0
-        if linear_error_norm < 5 * linear_tol or angular_error_norm < 5 * angular_tol:
-            accel_factor = 3.0  # Allow 3x more acceleration near target
-
-        # Apply acceleration limits with adaptive factor
-        if dt > 0:
-            linear_acc = (desired_linear_vel - self.prev_linear_vel) / dt
-            linear_acc_norm = np.linalg.norm(linear_acc)
-            max_linear_acc = self.max_linear_acc * accel_factor
-            if linear_acc_norm > max_linear_acc:
-                desired_linear_vel = (
-                    self.prev_linear_vel
-                    + (linear_acc / linear_acc_norm) * max_linear_acc * dt
-                )
-
-            angular_acc = (desired_angular_vel - self.prev_angular_vel) / dt
-            angular_acc_norm = np.linalg.norm(angular_acc)
-            max_angular_acc = self.max_angular_acc * accel_factor
-            if angular_acc_norm > max_angular_acc:
-                desired_angular_vel = (
-                    self.prev_angular_vel
-                    + (angular_acc / angular_acc_norm) * max_angular_acc * dt
-                )
+        desired_linear_vel = self.linear_gain * linear_error
+        desired_angular_vel = self.angular_gain * angular_error
 
         # Store for next iteration
         self.prev_linear_vel = desired_linear_vel.copy()
@@ -287,31 +215,12 @@ class JacobiRobot:
         # Combine into desired spatial velocity
         desired_spatial_vel = np.concatenate([desired_linear_vel, desired_angular_vel])
 
-        # Reduced damping near target to prevent over-damping
-        damping_factor = self.kd
-        if linear_error_norm < 3 * linear_tol and angular_error_norm < 3 * angular_tol:
-            damping_factor *= 0.5  # Reduce damping by half near target
-
-        # Add damping based on current velocity
-        current_spatial_vel = self.__get_ee_velocity()
-        desired_spatial_vel -= damping_factor * current_spatial_vel
-
         # Compute joint velocities using regularized pseudo-inverse
         J = self.__compute_jacobian()
 
         # Use regularized pseudo-inverse with multiple regularization terms
         J_pinv, joint_bias = self.__compute_regularized_jacobian_pinv(J)
         joint_velocities = J_pinv @ desired_spatial_vel + joint_bias
-
-        # Apply joint velocity limits
-        for i in range(len(joint_velocities)):
-            if i < len(self.dq_max) and self.dq_max[i] > 0:
-                joint_velocities[i] = np.clip(
-                    joint_velocities[i], -self.dq_max[i], self.dq_max[i]
-                )
-            else:
-                # Default velocity limit if not specified
-                joint_velocities[i] = np.clip(joint_velocities[i], -2.0, 2.0)
 
         # Check for excessive velocities (safety)
         if np.max(np.abs(joint_velocities)) > self.max_joint_vel:
@@ -716,7 +625,7 @@ if __name__ == "__main__":
     try:
         # Initialize robot
         robot = JacobiRobot(
-            urdf_path, ee_link="link6", max_linear_vel=0.05, max_angular_vel=0.2
+            urdf_path, ee_link="link6"
         )  # Reduced limits
 
         print(
