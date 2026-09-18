@@ -2,9 +2,9 @@ import os
 import math
 import socket
 import logging
-from typing import Callable, List
+from typing import Callable, List, NamedTuple
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import transforms3d as t3d
@@ -13,6 +13,11 @@ import json
 
 TF_RUB2FLU = np.array([[0, 0, -1, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
 THIS_DIR = os.path.dirname(os.path.realpath(__file__))
+
+
+class FrontendMount(NamedTuple):
+    path: str
+    directory: str
 
 
 def get_local_ip():
@@ -147,7 +152,9 @@ class Teleop:
     Args:
         host (str, optional): The host IP address. Defaults to "0.0.0.0".
         port (int, optional): The port number. Defaults to 4443.
-        frontend_dir (str, optional): The directory containing the frontend assets. Defaults to THIS_DIR.
+        frontend_dir (str | list[tuple[str, str]], optional): The directory
+            containing the frontend assets, or a list of route prefix and
+            frontend directory pairs. Defaults to THIS_DIR.
     """
 
     def __init__(
@@ -157,6 +164,10 @@ class Teleop:
         natural_phone_orientation_euler=None,
         natural_phone_position=None,
         frontend_dir=None,
+        offset_user_orientation=0,
+        current_pose_provider=None,
+        pose_jump_linear_tolerance=0.05,
+        pose_jump_angular_tolerance=math.radians(35),
     ):
         self.__logger = logging.getLogger("teleop")
         self.__logger.setLevel(logging.INFO)
@@ -170,6 +181,10 @@ class Teleop:
         self.__previous_received_pose = None
         self.__callbacks = []
         self.__pose = np.eye(4)
+        self.__previous_move = False
+        self.__current_pose_provider = current_pose_provider
+        self.__pose_jump_linear_tolerance = pose_jump_linear_tolerance
+        self.__pose_jump_angular_tolerance = pose_jump_angular_tolerance
 
         if natural_phone_orientation_euler is None:
             natural_phone_orientation_euler = [0, math.radians(-45), 0]
@@ -180,10 +195,9 @@ class Teleop:
             t3d.euler.euler2mat(*natural_phone_orientation_euler),
             [1, 1, 1],
         )
+        self.__offset_user_orientation = t3d.affines.compose([0, 0, 0], t3d.euler.euler2mat(0, 0, offset_user_orientation), [1, 1, 1])
 
-        if frontend_dir is None:
-            frontend_dir = THIS_DIR
-        self.__frontend_dir = frontend_dir
+        self.__frontend_mounts = self.__normalize_frontend_mounts(frontend_dir)
 
         self.__app = FastAPI()
         self.__manager = ConnectionManager()
@@ -191,6 +205,52 @@ class Teleop:
         # Configure logging
         logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
         self.__setup_routes()
+
+    def include_router(self, router: APIRouter, **kwargs) -> None:
+        self.__app.include_router(router, **kwargs)
+
+    def __normalize_frontend_mounts(self, frontend_dir):
+        if frontend_dir is None:
+            frontend_dir = THIS_DIR
+
+        if isinstance(frontend_dir, (str, os.PathLike)):
+            return [FrontendMount("/", os.fspath(frontend_dir))]
+
+        mounts = []
+        seen_paths = set()
+        for mount in frontend_dir:
+            try:
+                path, directory = mount
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "frontend_dir entries must be (path, directory) pairs"
+                ) from None
+
+            path = self.__normalize_frontend_path(path)
+            if path in seen_paths:
+                raise ValueError(f"Duplicate frontend mount path: {path}")
+
+            seen_paths.add(path)
+            mounts.append(FrontendMount(path, os.fspath(directory)))
+
+        if not mounts:
+            raise ValueError("frontend_dir mount list cannot be empty")
+
+        return mounts
+
+    @staticmethod
+    def __normalize_frontend_path(path):
+        path = str(path).strip()
+        if not path:
+            raise ValueError("Frontend mount path cannot be empty")
+
+        if not path.startswith("/"):
+            path = f"/{path}"
+
+        if path != "/":
+            path = path.rstrip("/")
+
+        return path
 
     def set_pose(self, pose: np.ndarray) -> None:
         """
@@ -222,6 +282,9 @@ class Teleop:
         position = message["position"]
         orientation = message["orientation"]
         scale = message.get("scale", 1.0)
+        #Detect rising edge of move signal
+        move_started = move and not self.__previous_move
+        self.__previous_move = move
 
         position = np.array([position["x"], position["y"], position["z"]])
         quat = np.array(
@@ -233,7 +296,13 @@ class Teleop:
             self.__absolute_pose_init = None
             self.__notify_subscribers(self.__pose, message)
             return
-
+        if move_started and self.__current_pose_provider is not None: # Rising edge
+            try:
+                current_pose = self.__current_pose_provider()
+                self.__pose = np.array(current_pose, dtype=float, copy=True)
+            except Exception:
+                self.__logger.warning("Failed to get current pose, using last known pose")  
+        
         received_pose_rub = t3d.affines.compose(
             position, t3d.quaternions.quat2mat(quat), [1, 1, 1]
         )
@@ -241,15 +310,15 @@ class Teleop:
         received_pose[:3, :3] = received_pose[:3, :3] @ np.linalg.inv(
             TF_RUB2FLU[:3, :3]
         )
-        received_pose = received_pose @ self.__natural_phone_pose
+        received_pose = self.__offset_user_orientation @ received_pose @ self.__natural_phone_pose
 
         # Pose jump protection
         if self.__previous_received_pose is not None:
             if not are_close(
                 received_pose,
                 self.__previous_received_pose,
-                lin_tol=0.05,
-                ang_tol=math.radians(35),
+                lin_tol=self.__pose_jump_linear_tolerance,
+                ang_tol=self.__pose_jump_angular_tolerance,
             ):
                 self.__logger.warning("Pose jump detected, resetting the pose")
                 self.__relative_pose_init = None
@@ -285,14 +354,8 @@ class Teleop:
         self.__notify_subscribers(self.__pose, message)
 
     def __setup_routes(self):
-        # Mount static files directory
-        assets_dir = os.path.join(self.__frontend_dir, "assets")
-        self.__app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-        @self.__app.get("/")
-        async def index():
-            self.__logger.debug("Serving the index.html file")
-            return FileResponse(os.path.join(self.__frontend_dir, "index.html"))
+        for mount_index, mount in enumerate(self.__frontend_mounts):
+            self.__mount_frontend(mount, mount_index)
 
         @self.__app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
@@ -313,6 +376,43 @@ class Teleop:
             except WebSocketDisconnect:
                 self.__manager.disconnect(websocket)
                 self.__logger.info("Client disconnected")
+
+    def __mount_frontend(self, mount: FrontendMount, mount_index: int):
+        assets_dir = os.path.join(mount.directory, "assets")
+        assets_path = "/assets" if mount.path == "/" else f"{mount.path}/assets"
+        self.__app.mount(
+            assets_path,
+            StaticFiles(directory=assets_dir),
+            name=f"frontend_assets_{mount_index}",
+        )
+
+        async def index():
+            self.__logger.debug(
+                f"Serving {mount.path} frontend index.html from {mount.directory}"
+            )
+            return FileResponse(os.path.join(mount.directory, "index.html"))
+
+        if mount.path == "/":
+            self.__app.add_api_route("/", index, methods=["GET"])
+            return
+
+        self.__app.add_api_route(mount.path, index, methods=["GET"])
+        self.__app.add_api_route(f"{mount.path}/", index, methods=["GET"])
+
+        @self.__app.get(f"{mount.path}/{{path:path}}")
+        async def prefixed_spa_index(path: str):
+            requested_path = os.path.abspath(os.path.join(mount.directory, path))
+            frontend_root = os.path.abspath(mount.directory)
+            if (
+                os.path.commonpath([frontend_root, requested_path]) == frontend_root
+                and os.path.isfile(requested_path)
+            ):
+                return FileResponse(requested_path)
+
+            self.__logger.debug(
+                f"Serving {mount.path} frontend index.html from {mount.directory}"
+            )
+            return FileResponse(os.path.join(mount.directory, "index.html"))
 
     def run(self) -> None:
         """
